@@ -44,7 +44,7 @@ MODEL_NAME: str = os.environ.get("MODEL_NAME", "")
 HF_TOKEN: str = os.environ.get("HF_TOKEN", "")
 
 # Environment server (local or HF Space)
-ENV_BASE_URL: str = os.environ.get("ENV_BASE_URL", "https://huggingface.co/spaces/srijan1617/MetaAI_WorkSimVoyager")
+ENV_BASE_URL: str = os.environ.get("ENV_BASE_URL", "https://srijan1617-metaai-worksimvoyager.hf.space")
 
 # Hard limits
 MAX_STEPS_PER_TASK: int = 40          # Never exceed 40 steps per task
@@ -567,11 +567,20 @@ def main() -> None:
     print()
 
     # ── Initialize clients ────────────────────────────────────────────
-    oai_client = OpenAI(
-        api_key=HF_TOKEN,
-        base_url=API_BASE_URL,
-    )
-    env_client = EnvClient(ENV_BASE_URL)
+    try:
+        oai_client = OpenAI(
+            api_key=HF_TOKEN,
+            base_url=API_BASE_URL,
+        )
+    except Exception as exc:
+        print(f"ERROR: Failed to initialize OpenAI client: {exc}")
+        sys.exit(1)
+
+    try:
+        env_client = EnvClient(ENV_BASE_URL)
+    except Exception as exc:
+        print(f"ERROR: Failed to initialize environment client: {exc}")
+        sys.exit(1)
 
     # ── Health check ──────────────────────────────────────────────────
     try:
