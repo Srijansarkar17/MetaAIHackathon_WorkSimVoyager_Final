@@ -44,7 +44,7 @@ MODEL_NAME: str = os.environ.get("MODEL_NAME", "")
 HF_TOKEN: str = os.environ.get("HF_TOKEN", "")
 
 # Environment server (local or HF Space)
-ENV_BASE_URL: str = os.environ.get("ENV_BASE_URL", "https://aditya9981-meta-hackthon-worksim-voyager.hf.space")
+ENV_BASE_URL: str = os.environ.get("ENV_BASE_URL", "https://huggingface.co/spaces/srijan1617/MetaAI_WorkSimVoyager")
 
 # Hard limits
 MAX_STEPS_PER_TASK: int = 40          # Never exceed 40 steps per task
@@ -649,4 +649,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(f"FATAL ERROR: {exc}")
+        traceback.print_exc()
+        sys.exit(1)
