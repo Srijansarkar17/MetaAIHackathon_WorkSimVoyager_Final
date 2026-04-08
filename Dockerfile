@@ -20,6 +20,17 @@ COPY requirements.txt /build/requirements.txt
 # Install all dependencies into a dedicated prefix
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
+# ── Stage 1.5: Frontend Builder ──────────────────────────────────────
+FROM node:18-slim AS frontend-builder
+
+WORKDIR /frontend-build
+
+# Copy frontend source
+COPY frontend/ /frontend-build/
+
+# Install dependencies and build
+RUN npm install && npm run build
+
 # ── Stage 2: Runtime ─────────────────────────────────────────────────
 FROM python:3.11-slim
 
@@ -36,6 +47,9 @@ RUN useradd -m -u 1000 appuser
 
 # Copy installed Python packages from builder
 COPY --from=builder /install /usr/local
+
+# Copy built frontend
+COPY --from=frontend-builder /frontend-build/dist /app/static
 
 # Copy application source code
 COPY app.py /app/app.py

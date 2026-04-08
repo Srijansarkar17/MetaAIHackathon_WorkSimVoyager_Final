@@ -10,11 +10,21 @@ from __future__ import annotations
 import json, traceback
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from server.env import WorkSimVoyagerEnvironment
 
 app = FastAPI(title="WorkSim Voyager", version="0.1.0",
               description="Workplace simulation OpenEnv environment")
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Serve index.html for root path
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")
 
 # ── request / response models ─────────────────────────────────────────
 class ResetRequest(BaseModel):
