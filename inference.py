@@ -324,6 +324,12 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
 
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    # Validator requires scores STRICTLY between 0 and 1 (exclusive).
+    # Clamp to (0, 1) open interval: never exactly 0 or exactly 1.
+    if score <= 0:
+        score = 0.01
+    elif score >= 1:
+        score = 0.99
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
