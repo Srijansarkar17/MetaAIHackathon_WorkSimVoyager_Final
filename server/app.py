@@ -11,20 +11,11 @@ import json, traceback
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from server.env import WorkSimVoyagerEnvironment
 
 app = FastAPI(title="WorkSim Voyager", version="0.1.0",
               description="Workplace simulation OpenEnv environment")
-
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Serve index.html for root path
-@app.get("/")
-async def read_root():
-    return FileResponse("static/index.html")
 
 # ── request / response models ─────────────────────────────────────────
 class ResetRequest(BaseModel):
@@ -100,6 +91,18 @@ async def ws_endpoint(websocket: WebSocket):
         pass
     except Exception:
         traceback.print_exc()
+
+# ── Static files (MUST be after all API routes) ─────────────────────
+# Mounted at "/" so Vite's built assets (/assets/index-xxx.js) resolve correctly.
+# html=True serves index.html for the root path and SPA fallback.
+# FastAPI evaluates registered routes BEFORE mounts, so /health, /reset, /step,
+# /state, /schema, /ws all take priority over static file serving.
+import os as _os
+_static_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "static")
+if not _os.path.isdir(_static_dir):
+    _static_dir = "static"  # Fallback for Docker where CWD is /app
+if _os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
 
 # ── CLI entry point ──────────────────────────────────────────────────
 def main() -> None:

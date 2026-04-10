@@ -8,3 +8,8 @@ Scored by deterministic graders with meaningful reward shaping (0.0–1.0).
 """
 
 __version__ = "0.1.0"
+
+# Re-export client classes for convenience
+from .client import WorkSimVoyagerEnv, WorkSimAction, WorkSimObservation, WorkSimState
+
+__all__ = ["WorkSimVoyagerEnv", "WorkSimAction", "WorkSimObservation", "WorkSimState"]

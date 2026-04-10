@@ -59,6 +59,7 @@ COPY openenv.yaml /app/openenv.yaml
 COPY pyproject.toml /app/pyproject.toml
 COPY requirements.txt /app/requirements.txt
 COPY __init__.py /app/__init__.py
+COPY client.py /app/client.py
 
 
 COPY README.md /app/README.md
