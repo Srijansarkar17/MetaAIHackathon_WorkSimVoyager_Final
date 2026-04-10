@@ -386,7 +386,7 @@ class EnvHTTPClient:
             return r.json()
         except Exception as exc:
             print(f"[DEBUG] reset() failed: {exc}", flush=True)
-            return {"observation": {}, "reward": 0.0, "done": False, "info": {}}
+            return {"observation": {}, "reward": 0, "done": False, "info": {}}
 
     def step(self, tool: str, command: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """POST /step with action={tool, command, input}."""
@@ -401,7 +401,7 @@ class EnvHTTPClient:
             return r.json()
         except Exception as exc:
             print(f"[DEBUG] step() failed: {exc}", flush=True)
-            return {"observation": {}, "reward": 0.0, "done": False,
+            return {"observation": {}, "reward": 0, "done": False,
                     "info": {"action_result": {"error": str(exc)}}}
 
     def state(self) -> Dict[str, Any]:
@@ -413,7 +413,7 @@ class EnvHTTPClient:
             r.raise_for_status()
             return r.json()
         except Exception:
-            return {"cumulative_reward": 0.0, "step_count": 0}
+            return {"cumulative_reward": 0, "step_count": 0}
 
     def close(self):
         """Close the HTTP session."""
@@ -476,7 +476,7 @@ async def run_task(
 
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    score = 0
     success = False
     done = False
 
@@ -495,9 +495,9 @@ async def run_task(
                 info = reset_data.get("info", {})
         except Exception as exc:
             print(f"[DEBUG] Failed to reset environment: {exc}", flush=True)
-            log_end(success=False, steps=0, score=0.0, rewards=[])
+            log_end(success=False, steps=0, score=0, rewards=[])
             return {
-                "task_id": task_id, "score": 0.0, "steps": 0,
+                "task_id": task_id, "score": 0, "steps": 0,
                 "rewards": [], "success": False, "done": False,
             }
 
@@ -529,7 +529,7 @@ async def run_task(
                     messages=messages,
                     tools=TOOL_DEFS,
                     tool_choice="auto",
-                    temperature=0.0,
+                    temperature=0,
                     max_tokens=2048,
                 )
             except Exception as exc:
@@ -568,12 +568,12 @@ async def run_task(
                             step_result = await env.step(
                                 WorkSimAction(tool=tool, command=command, input=args)
                             )
-                            step_reward = step_result.reward or 0.0
+                            step_reward = step_result.reward or 0
                             done = step_result.done
                             action_result = getattr(step_result.observation, "action_result", None) or {}
                         else:
                             step_data = env.step(tool=tool, command=command, input_data=args)
-                            step_reward = step_data.get("reward", 0.0)
+                            step_reward = step_data.get("reward", 0)
                             done = step_data.get("done", False)
                             action_result = step_data.get("info", {}).get("action_result", {})
 
@@ -603,12 +603,12 @@ async def run_task(
 
                     except Exception as exc:
                         error_msg = str(exc)
-                        rewards.append(0.0)
+                        rewards.append(0)
 
                         log_step(
                             step=steps_taken,
                             action=action_str,
-                            reward=0.0,
+                            reward=0,
                             done=False,
                             error=error_msg,
                         )
@@ -629,14 +629,14 @@ async def run_task(
         try:
             if env_type == "sdk":
                 final_state = await env.state()
-                score = getattr(final_state, "cumulative_reward", 0.0)
+                score = getattr(final_state, "cumulative_reward", 0)
             else:
                 state_data = env.state()
-                score = state_data.get("cumulative_reward", 0.0)
+                score = state_data.get("cumulative_reward", 0)
         except Exception:
             score = sum(rewards)
 
-        score = min(max(score, 0.0), 1.0)
+        score = min(max(score, 0), 1)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as exc:
@@ -676,7 +676,7 @@ async def main() -> None:
             remaining = TOTAL_TIMEOUT_SECONDS - global_elapsed
             if remaining < 30:
                 log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
-                log_end(success=False, steps=0, score=0.0, rewards=[])
+                log_end(success=False, steps=0, score=0, rewards=[])
                 continue
 
             task_timeout = min(PER_TASK_TIMEOUT_SECONDS, remaining - 10)
@@ -693,7 +693,7 @@ async def main() -> None:
             except Exception as exc:
                 print(f"[DEBUG] FATAL ERROR on task {task_id}: {exc}", flush=True)
                 log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
-                log_end(success=False, steps=0, score=0.0, rewards=[])
+                log_end(success=False, steps=0, score=0, rewards=[])
 
     finally:
         try:
