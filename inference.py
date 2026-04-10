@@ -51,8 +51,6 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-from client import WorkSimVoyagerEnv, WorkSimAction
-
 # ═══════════════════════════════════════════════════════════════════════
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════
@@ -62,6 +60,12 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+
+# HF Space URL — the environment is already deployed here
+HF_SPACE_URL = os.getenv(
+    "ENV_BASE_URL",
+    "https://srijan1617-metaai-worksimvoyager.hf.space",
+)
 
 # The 3 required tasks (difficulty-tiered)
 TASK_IDS: List[str] = [
@@ -338,21 +342,135 @@ def _parse_function_name(name: str) -> tuple:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  ENVIRONMENT CLIENT — HTTP-based, no Docker dependency
+# ═══════════════════════════════════════════════════════════════════════
+
+import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+class EnvHTTPClient:
+    """
+    Lightweight HTTP client for the WorkSim Voyager environment.
+    Talks directly to the server's /reset, /step, /state endpoints.
+    No Docker dependency — works with any reachable server.
+    """
+
+    def __init__(self, base_url: str, timeout: float = 60.0):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self._session = requests.Session()
+        self._session.headers["Content-Type"] = "application/json"
+
+    def health_check(self) -> bool:
+        """Check if the server is reachable."""
+        try:
+            r = self._session.get(
+                f"{self.base_url}/health", timeout=10, verify=False,
+            )
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    def reset(self, task_id: str) -> Dict[str, Any]:
+        """POST /reset with task_id."""
+        try:
+            r = self._session.post(
+                f"{self.base_url}/reset",
+                json={"task_id": task_id},
+                timeout=self.timeout,
+                verify=False,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            print(f"[DEBUG] reset() failed: {exc}", flush=True)
+            return {"observation": {}, "reward": 0.0, "done": False, "info": {}}
+
+    def step(self, tool: str, command: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /step with action={tool, command, input}."""
+        try:
+            r = self._session.post(
+                f"{self.base_url}/step",
+                json={"action": {"tool": tool, "command": command, "input": input_data}},
+                timeout=self.timeout,
+                verify=False,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            print(f"[DEBUG] step() failed: {exc}", flush=True)
+            return {"observation": {}, "reward": 0.0, "done": False,
+                    "info": {"action_result": {"error": str(exc)}}}
+
+    def state(self) -> Dict[str, Any]:
+        """GET /state."""
+        try:
+            r = self._session.get(
+                f"{self.base_url}/state", timeout=self.timeout, verify=False,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return {"cumulative_reward": 0.0, "step_count": 0}
+
+    def close(self):
+        """Close the HTTP session."""
+        try:
+            self._session.close()
+        except Exception:
+            pass
+
+
+async def create_env():
+    """
+    Create environment connection with fallback strategy:
+      1. Try OpenEnv SDK from_docker_image (if Docker is available)
+      2. Fall back to direct HTTP connection to HF Space
+    """
+    # ── Strategy 1: OpenEnv SDK with Docker (preferred) ───────────────
+    if IMAGE_NAME:
+        try:
+            from client import WorkSimVoyagerEnv
+            env = await WorkSimVoyagerEnv.from_docker_image(IMAGE_NAME)
+            print("[DEBUG] Connected via from_docker_image()", flush=True)
+            return ("sdk", env)
+        except Exception as exc:
+            print(f"[DEBUG] from_docker_image() failed: {exc}", flush=True)
+            print("[DEBUG] Falling back to HTTP client...", flush=True)
+
+    # ── Strategy 2: Direct HTTP to HF Space ───────────────────────────
+    env = EnvHTTPClient(base_url=HF_SPACE_URL)
+
+    # Wait for the Space to be ready (may take time to wake up)
+    for attempt in range(30):
+        if env.health_check():
+            print(f"[DEBUG] Connected via HTTP to {HF_SPACE_URL}", flush=True)
+            return ("http", env)
+        print(f"[DEBUG] Waiting for env server (attempt {attempt + 1}/30)...", flush=True)
+        await asyncio.sleep(2)
+
+    # Even if health check fails, return the client — step/reset will handle errors
+    print(f"[DEBUG] Health check timed out, proceeding anyway...", flush=True)
+    return ("http", env)
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  AGENT LOOP FOR A SINGLE TASK
 # ═══════════════════════════════════════════════════════════════════════
 
 async def run_task(
-    client: OpenAI,
-    env: WorkSimVoyagerEnv,
+    oai_client: OpenAI,
+    env_type: str,
+    env: Any,
     task_id: str,
     model: str,
     task_timeout: float,
 ) -> Dict[str, Any]:
     """
     Run the agent loop for a single task.
-
-    Returns a result dict with:
-      - task_id, score, steps, rewards, success, done
+    Supports both SDK (env_type="sdk") and HTTP (env_type="http") clients.
     """
     task_start = time.monotonic()
 
@@ -367,7 +485,14 @@ async def run_task(
     try:
         # ── Reset environment for this task ───────────────────────────
         try:
-            reset_result = await env.reset(task_id=task_id)
+            if env_type == "sdk":
+                from client import WorkSimAction
+                reset_result = await env.reset(task_id=task_id)
+                obs = reset_result.observation
+                info = getattr(obs, "info", None) or {}
+            else:
+                reset_data = env.reset(task_id=task_id)
+                info = reset_data.get("info", {})
         except Exception as exc:
             print(f"[DEBUG] Failed to reset environment: {exc}", flush=True)
             log_end(success=False, steps=0, score=0.0, rewards=[])
@@ -376,9 +501,6 @@ async def run_task(
                 "rewards": [], "success": False, "done": False,
             }
 
-        # Extract task description from reset observation
-        obs = reset_result.observation
-        info = getattr(obs, "info", None) or {}
         description = info.get("task_description", f"Complete task: {task_id}")
         max_steps_env = info.get("max_steps", MAX_STEPS_PER_TASK)
         max_steps = min(MAX_STEPS_PER_TASK, max_steps_env)
@@ -393,7 +515,6 @@ async def run_task(
 
         # ── Agent loop ────────────────────────────────────────────────
         for turn in range(max_steps):
-            # Check timeout
             elapsed = time.monotonic() - task_start
             if elapsed > task_timeout:
                 break
@@ -403,12 +524,12 @@ async def run_task(
 
             # ── Call LLM ──────────────────────────────────────────────
             try:
-                response = client.chat.completions.create(
+                response = oai_client.chat.completions.create(
                     model=model,
                     messages=messages,
                     tools=TOOL_DEFS,
                     tool_choice="auto",
-                    temperature=0.0,   # Deterministic
+                    temperature=0.0,
                     max_tokens=2048,
                 )
             except Exception as exc:
@@ -438,22 +559,25 @@ async def run_task(
 
                     steps_taken += 1
 
-                    # Format action string for logging
                     action_str = f"{tool}_{command}({json.dumps(args, default=str)[:80]})"
 
-                    # ── Execute step via OpenEnv SDK ──────────────────
+                    # ── Execute step ──────────────────────────────────
                     try:
-                        step_result = await env.step(
-                            WorkSimAction(tool=tool, command=command, input=args)
-                        )
+                        if env_type == "sdk":
+                            from client import WorkSimAction
+                            step_result = await env.step(
+                                WorkSimAction(tool=tool, command=command, input=args)
+                            )
+                            step_reward = step_result.reward or 0.0
+                            done = step_result.done
+                            action_result = getattr(step_result.observation, "action_result", None) or {}
+                        else:
+                            step_data = env.step(tool=tool, command=command, input_data=args)
+                            step_reward = step_data.get("reward", 0.0)
+                            done = step_data.get("done", False)
+                            action_result = step_data.get("info", {}).get("action_result", {})
 
-                        step_reward = step_result.reward or 0.0
-                        done = step_result.done
-                        step_obs = step_result.observation
-
-                        # Extract error from action_result if present
                         error_msg = None
-                        action_result = getattr(step_obs, "action_result", None) or {}
                         if isinstance(action_result, dict) and "error" in action_result:
                             error_msg = str(action_result["error"])
 
@@ -467,7 +591,6 @@ async def run_task(
                             error=error_msg,
                         )
 
-                        # Feed action result back to LLM for context
                         result_str = json.dumps(action_result, default=str)
                         if len(result_str) > 4000:
                             result_str = result_str[:4000] + "...(truncated)"
@@ -500,18 +623,19 @@ async def run_task(
                         break
 
             elif choice.finish_reason == "stop":
-                # LLM decided it's done (no more tool calls)
                 break
 
         # ── Compute final score ───────────────────────────────────────
-        # Get final state from environment for accurate cumulative score
         try:
-            final_state = await env.state()
-            score = getattr(final_state, "cumulative_reward", 0.0)
+            if env_type == "sdk":
+                final_state = await env.state()
+                score = getattr(final_state, "cumulative_reward", 0.0)
+            else:
+                state_data = env.state()
+                score = state_data.get("cumulative_reward", 0.0)
         except Exception:
             score = sum(rewards)
 
-        # Clamp to [0, 1]
         score = min(max(score, 0.0), 1.0)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
@@ -542,17 +666,15 @@ async def main() -> None:
     # ── Initialize OpenAI client ──────────────────────────────────────
     oai_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    # ── Initialize environment via Docker image ───────────────────────
-    env = await WorkSimVoyagerEnv.from_docker_image(IMAGE_NAME)
+    # ── Initialize environment (Docker → HTTP fallback) ───────────────
+    env_type, env = await create_env()
 
     try:
         # ── Run all 3 tasks sequentially ──────────────────────────────
         for i, task_id in enumerate(TASK_IDS):
-            # Check global timeout
             global_elapsed = time.monotonic() - global_start
             remaining = TOTAL_TIMEOUT_SECONDS - global_elapsed
             if remaining < 30:
-                # Emit empty results for skipped tasks
                 log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
                 log_end(success=False, steps=0, score=0.0, rewards=[])
                 continue
@@ -561,7 +683,8 @@ async def main() -> None:
 
             try:
                 await run_task(
-                    client=oai_client,
+                    oai_client=oai_client,
+                    env_type=env_type,
                     env=env,
                     task_id=task_id,
                     model=MODEL_NAME,
@@ -574,9 +697,12 @@ async def main() -> None:
 
     finally:
         try:
-            await env.close()
+            if env_type == "sdk":
+                await env.close()
+            else:
+                env.close()
         except Exception as e:
-            print(f"[DEBUG] env.close() error (container cleanup): {e}", flush=True)
+            print(f"[DEBUG] env.close() error: {e}", flush=True)
 
 
 if __name__ == "__main__":
