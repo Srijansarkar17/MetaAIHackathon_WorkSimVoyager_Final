@@ -468,96 +468,11 @@ The inference script prints per-task scores and a summary table:
 | 0.75–0.90 | Strong performance — nearly all actions correct |
 | 0.90–1.00 | Near-perfect — all grader criteria satisfied |
 
-### Design Decisions
 
-- **Temperature 0.0**: Ensures deterministic, reproducible output across runs
-- **Max 40 steps**: Hard cap prevents runaway loops while allowing complex tasks
-- **Per-task timeout (6 min)**: Prevents any single task from consuming all runtime
-- **Global timeout (20 min)**: Hard runtime cap per OpenEnv spec
-- **Graceful error handling**: All exceptions caught — never crashes, always reports
-- **Context truncation (4000 chars)**: Prevents OOM on 8GB systems from large tool outputs
-- **Retry logic**: Up to 2 retries on LLM API failures before stopping
 
----
+## 8. Deployment Instructions
 
-## 8. Progress Tracker
-
-- [x] Project initialized
-- [x] Core environment implemented
-- [x] Tools implemented (5 tools, 30 commands)
-- [x] Tool simulation layer (Phase 2)
-  - [x] Mail: classify_email, summarize_thread, send_reply
-  - [x] Slack: send_message, read_channel (with channel validation)
-  - [x] Calendar: check_availability, create_event (with conflict detection)
-  - [x] Drive: list_files, read_file (with helpful error hints)
-  - [x] Jira: read_ticket, update_ticket, assign_task (with team validation)
-- [x] Action validation layer (4-stage pipeline)
-- [x] Incorrect tool usage penalty (graduated: −0.03 / −0.05 / −0.10)
-- [x] Edge case handling (missing data, conflicts, duplicate checks)
-- [x] Tasks implemented (Phase 3)
-  - [x] Task 1 — Inbox Triage (Easy, ~10 steps, 8 emails + noise)
-  - [x] Task 2 — Meeting Coordination (Medium, ~15 steps, cross-tool)
-  - [x] Task 3 — Project Rescue (Hard, 15-30 steps, 5-tool multi-step reasoning)
-  - [x] Deterministic graders with fine-grained reward shaping
-  - [x] Realistic noise (irrelevant messages, newsletters, OOO, random Slack)
-  - [x] Task loader + initial_state() per task
-  - [x] Goal definitions with expected_outcomes
-- [x] Original tasks preserved (backward compatible)
-- [x] Graders implemented (Phase 4)
-  - [x] Easy: accuracy = correct_classifications / total
-  - [x] Medium: slot_validity 0.30, event_creation 0.30, agenda 0.40
-  - [x] Hard: task_breakdown 0.30, assignments 0.20, email 0.30, meeting 0.20
-  - [x] Grader breakdown in info dict (step + state)
-  - [x] Deterministic, [0.0, 1.0], never returns same value
-- [x] Reward function implemented (Phase 5)
-  - [x] Action-category bonuses (+0.20 classify, +0.30 schedule, +0.30 breakdown, +0.20 email)
-  - [x] Graduated penalties (−0.10 wrong tool, −0.10 repeated, −0.20 destructive)
-  - [x] Per-step reward cap [−0.20, +0.35]
-  - [x] Anti-hacking: action fingerprinting, one-time bonus, grader-gated bonus
-  - [x] Reward breakdown in info dict + reward_trace in state()
-  - [x] Smooth, non-binary progression
-- [✔] Inference script completed (Phase 6)
-  - [✔] Uses OpenAI client with API_BASE_URL, MODEL_NAME, HF_TOKEN
-  - [✔] Runs 3 tasks sequentially (inbox_triage, meeting_coord, project_rescue)
-  - [✔] Max 40 steps per task
-  - [✔] Prints per-task scores + average score
-  - [✔] Deterministic output (temperature=0.0)
-  - [✔] Runtime < 20 min with 2 vCPU / 8GB RAM constraints
-  - [✔] Graceful error handling (no crashes)
-  - [✔] Baseline Results section in README
-- [✔] Docker build working (Phase 7)
-  - [✔] Multi-stage build (python:3.11-slim) — lightweight ~850MB image
-  - [✔] All COPY sources verified
-  - [✔] Health check on /health endpoint
-  - [✔] Non-root user (HF Spaces compatible)
-  - [✔] Single-worker uvicorn for 2 vCPU / 8GB constraint
-  - [✔] /reset, /step, /state, /health, /schema endpoints verified
-- [✔] HF Space deployed (Phase 7)
-  - [✔] Dockerfile ready for `openenv push`
-  - [✔] openenv.yaml configured (spec_version: 1, port: 8000)
-  - [✔] Deployment Instructions in README
-- [✔] OpenEnv validation passed (Phase 8)
-  - [✔] 123/123 automated checks passed
-  - [✔] All 6 graders return float in [0.0, 1.0]
-  - [✔] Initial grader score == 0.0 (no free credit)
-  - [✔] Reward shaping is continuous (8+ distinct score values per episode)
-  - [✔] Perfect score achievable (inbox_triage = 1.0 with correct actions)
-  - [✔] Penalties verified (−0.10 invalid tool, −0.10 invalid command)
-  - [✔] Action validation layer catches missing required fields
-  - [✔] Episode terminates at max_steps
-  - [✔] Docker build succeeds (zero warnings)
-  - [✔] Container: /health, /reset, /step, /state, /schema all verified
-  - [✔] openenv.yaml valid (spec_version: 1, port: 8000)
-  - [✔] inference.py loads, validates env vars, has 3 task IDs
-  - [✔] Cross-tool scoring verified (meeting_coord + project_rescue)
-  - [✔] Grader type bug fixed (int → float for 0.0 scores)
-- [✔] Final submission ready
-
----
-
-## 9. Deployment Instructions
-
-### 9.1 Local Development
+### 8.1 Local Development
 
 ```bash
 cd worksim_voyager
@@ -580,7 +495,7 @@ curl -X POST http://localhost:8000/reset \
 # → {observation, reward: 0.0, done: false, info: {...}}
 ```
 
-### 9.2 Docker Build & Run
+### 8.2 Docker Build & Run
 
 ```bash
 # Build the image (multi-stage, ~850MB final)
@@ -607,7 +522,7 @@ curl -X POST http://localhost:8000/reset \
 | Workers | 1 (optimized for 2 vCPU) |
 | Health check | `GET /health` every 30s |
 
-### 9.3 HuggingFace Spaces Deployment
+### 8.3 HuggingFace Spaces Deployment
 
 #### Option A: Using `openenv push` (recommended)
 
@@ -646,7 +561,7 @@ git push
 
 3. The Space will auto-build from the Dockerfile and start serving on port 8000.
 
-### 9.4 Run Inference Against Deployed Space
+### 8.4 Run Inference Against Deployed Space
 
 ```bash
 # Set environment variables
@@ -661,7 +576,7 @@ export ENV_BASE_URL="https://your-username-worksim-voyager.hf.space"
 python inference.py
 ```
 
-### 9.5 OpenEnv Configuration
+### 8.5 OpenEnv Configuration
 
 The `openenv.yaml` defines the environment contract:
 
@@ -685,7 +600,7 @@ port: 8000
 
 ---
 
-## 10. Environment API (HTTP Endpoints)
+## 9. Environment API (HTTP Endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -698,32 +613,7 @@ port: 8000
 
 ---
 
-## 11. Validation Status
 
-**Phase 8 validation: 123/123 checks passed ✅**
-
-| Category | Checks | Status |
-|---|---|---|
-| Module imports & structure | 6 | ✅ All pass |
-| Task registry (6 tasks) | 5 | ✅ All pass |
-| Environment API contract (reset/step/state) | 35 | ✅ All pass |
-| Grader validation (deterministic, [0.0–1.0]) | 15 | ✅ All pass |
-| Reward shaping (continuous, not sparse) | 6 | ✅ All pass |
-| Penalty system | 2 | ✅ All pass |
-| Action validation layer | 2 | ✅ All pass |
-| Tool validation (5 tools, 30 commands) | 7 | ✅ All pass |
-| Episode termination | 1 | ✅ All pass |
-| Required files (13 files) | 13 | ✅ All pass |
-| openenv.yaml validation | 5 | ✅ All pass |
-| Inference script validation | 9 | ✅ All pass |
-| FastAPI endpoint registration | 6 | ✅ All pass |
-| Cross-tool task validation | 4 | ✅ All pass |
-| Constraint checks | 4 | ✅ All pass |
-| **TOTAL** | **123** | **✅ ALL PASS** |
-
-### Bug Fixed During Validation
-
-- **Grader return type** (`grader_registry.py`): `min(1, max(0, s))` used `int` literals, causing graders to return `int(0)` instead of `float(0.0)` when score was zero. Fixed to `min(1.0, max(0.0, s))` — all graders now consistently return `float`.
 
 ### Reproduction
 
