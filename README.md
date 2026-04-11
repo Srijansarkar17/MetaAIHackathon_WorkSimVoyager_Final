@@ -4,7 +4,7 @@ emoji: 🚀
 colorFrom: blue
 colorTo: green
 sdk: docker
-app_port: 8000
+app_port: 7860
 pinned: false
 ---
 t
@@ -586,7 +586,7 @@ name: worksim_voyager
 type: space
 runtime: fastapi
 app: server.app:app
-port: 8000
+port: 7860
 ```
 
 | Field | Description |
@@ -631,4 +631,4 @@ python validate_all.py
 
 ## License
 
-BSD-3-Clause
+apache-2.0
