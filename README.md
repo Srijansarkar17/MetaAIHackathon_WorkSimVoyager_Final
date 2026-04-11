@@ -7,13 +7,15 @@ sdk: docker
 app_port: 7860
 pinned: false
 ---
-t
+
 
 # WorkSim Voyager 🚀
 
 **A production-grade OpenEnv workplace-simulation environment for agentic reinforcement learning.**
 
 WorkSim Voyager drops an AI agent into a realistic corporate workspace and challenges it to complete multi-step professional tasks using 5 simulated tools — **mail, slack, drive, calendar, jira**. Every task is scored by deterministic graders returning continuous rewards in **[0.0, 1.0]** with rich reward shaping.
+
+Deployed Link : https://huggingface.co/spaces/srijan1617/MetaAI_WorkSimVoyager
 
 ---
 
