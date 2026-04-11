@@ -1,5 +1,5 @@
 ---
-title: My AI App
+title: WorkSimVoyager
 emoji: 🚀
 colorFrom: blue
 colorTo: green
